@@ -1,0 +1,53 @@
+
+name: Iris ML Reproducibility with CML
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  reproduce-experiment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up CML
+        uses: iterative/setup-cml@v2
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Recreate Iris dataset
+        run: |
+          python -c "from sklearn.datasets import load_iris; load_iris(as_frame=True).frame.to_csv('data/raw/iris.csv', index=False)"
+
+      - name: Reproduce DVC pipeline
+        run: |
+          dvc repro
+
+      - name: Generate metrics report
+        run: |
+          echo "# Iris ML Experiment Report" > report.md
+          echo "## Model Evaluation Metrics" >> report.md
+          dvc metrics show --show-md >> report.md
+
+      - name: Publish report to pull request
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cml comment create report.md
