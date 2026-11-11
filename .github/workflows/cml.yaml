@@ -1,0 +1,67 @@
+
+name: Iris ML Reproducibility with CML
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  reproduce-experiment:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up CML
+        uses: iterative/setup-cml@v2
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Recreate Iris dataset
+        run: |
+          python -c "from sklearn.datasets import load_iris; load_iris(as_frame=True).frame.to_csv('data/raw/iris.csv', index=False)"
+
+      - name: Reproduce DVC pipeline
+        run: |
+          dvc repro
+
+      - name: Generate metrics report
+        run: |
+          python - <<'PY'
+          import json
+
+          with open("reports/metrics.json") as f:
+              metrics = json.load(f)
+
+          with open("report.md", "w") as f:
+              f.write("# Iris ML Experiment Report\n\n")
+              f.write("## Model Evaluation Metrics\n\n")
+              f.write("| Metric | Value |\n")
+              f.write("|---|---:|\n")
+
+              for name, value in metrics.items():
+                  f.write(f"| {name} | {value:.4f} |\n")
+
+          print("Metrics report generated successfully!")
+          PY
+
+      - name: Publish report to pull request
+        env:
+          REPO_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cml comment create report.md
